@@ -1,18 +1,41 @@
-const conn = new WebSocket('wss://46.223.110.112:8080/socket')
+// const conn = new WebSocket('wss://46.223.110.112:8080/socket')
 
 let peerConnection;
-let dataChannel;
-
 let localStream;
 
-conn.onopen = () => {
-    console.log("Connected to the signaling server");
-    initialize();
-};
+let socket = new SockJS('https://46.223.110.112:8080/socket');
+let stompClient = Stomp.over(socket);
+stompClient.connect({}, frame => {
+    let configuration = null;
 
-conn.onmessage = (msg) => {
-    console.log("Got message", msg.data);
-    let content = JSON.parse(msg.data);
+    const constraints = {
+        video: true, audio: false
+    };
+
+    navigator.mediaDevices.getUserMedia(constraints)
+        .then(stream => {
+            // document.querySelector("#localVideo").srcObject = stream;
+            localStream = stream;
+        })
+        .catch(err => { console.log(err); });
+
+    peerConnection = new RTCPeerConnection(configuration);
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            sendSignaling({
+                event: "candidate",
+                data: event.candidate
+            });
+        }
+    };
+
+    stompClient.subscribe('/topic/room/wald/' + frame.headers['user-name'], handleSelfSubscription);
+    stompClient.subscribe('/topic/room/wald/', msg => console.log(msg));
+});
+
+
+const handleSelfSubscription = msg => {
+    let content = JSON.parse(msg.body);
     let data = content.data;
     switch (content.event) {
         case "offer":
@@ -27,69 +50,17 @@ conn.onmessage = (msg) => {
         default:
             break;
     }
-};
-
-const send = (message) => {
-    conn.send(JSON.stringify(message));
 }
 
-const initialize = () => {
-    let configuration = null;
+const sendSignaling = msg => 
+    stompClient.send("/app/rtc-message/room/wald", {}, JSON.stringify(msg));
 
-    const constraints = {
-        video: true, audio: false
-    };
-
-    navigator.mediaDevices.getUserMedia(constraints).
-        then(function (stream) {
-            // document.querySelector("#localVideo").srcObject = stream;
-            localStream = stream;
-        })
-        .catch(function (err) { /* handle the error */ });
-
-
-
-    peerConnection = new RTCPeerConnection(configuration, {
-        optional: [{
-            RtpDataChannels: true
-        }]
-    });
-
-    // Setup ice handling
-    peerConnection.onicecandidate = event => {
-        if (event.candidate) {
-            send({
-                event: "candidate",
-                data: event.candidate
-            });
-        }
-    };
-
-    // creating data channel
-    dataChannel = peerConnection.createDataChannel("dataChannel", {
-        reliable: true
-    });
-
-
-    dataChannel.onerror = error => {
-        console.log("Error occured on datachannel:", error);
-    };
-
-    // when we receive a message from the other peer, printing it on the console
-    dataChannel.onmessage = event => {
-        console.log("message:", event.data);
-    };
-
-    dataChannel.onclose = () => {
-        console.log("data channel is closed");
-    };
-}
 
 const createOffer = () => {
     console.log("createOffer");
     peerConnection.createOffer(offer => {
         console.log("OFFER", offer)
-        send({
+        sendSignaling({
             event: "offer",
             data: offer
         });
@@ -110,7 +81,7 @@ const handleOffer = offer => {
     // create and send an answer to an offer
     peerConnection.createAnswer(answer => {
         peerConnection.setLocalDescription(answer);
-        send({
+        sendSignaling({
             event: "answer",
             data: answer
         });
