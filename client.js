@@ -35,7 +35,7 @@ const sendSignalingToPeer = (userId, msg) =>
 const connect = () => (stompClient.connect({}, frame => {
     console.log("connected to ws :)");
     const constraints = {
-        video: true, audio: false
+        video: true, audio: true
     };
 
     navigator.mediaDevices.getUserMedia(constraints)
@@ -102,11 +102,14 @@ const handleOffer = content => {
     });
 
     pc.connection.ontrack = e => {
-        let audio = document.createElement('video');
-        audio.setAttribute("autoplay", "true");
-        audio.setAttribute("playsinline", true);
-        document.querySelector("body").appendChild(audio);
-        audio.srcObject = e.streams[0];
+        if (![...document.querySelectorAll("video")].some(v => pc.userId == v.getAttribute("id"))) {
+            let audio = document.createElement('video');
+            audio.setAttribute("id", pc.userId);
+            audio.setAttribute("autoplay", "true");
+            audio.setAttribute("playsinline", true);
+            document.querySelector("body").appendChild(audio);
+            audio.srcObject = e.streams[0];
+        }
     };
 
     pc.connection.setRemoteDescription(new RTCSessionDescription(content.data));
